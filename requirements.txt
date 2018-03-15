@@ -1,0 +1,5 @@
+dnslib==0.9.7
+gevent==1.2.2
+greenlet==0.4.13
+pylru==1.0.9
+redis==2.10.6
