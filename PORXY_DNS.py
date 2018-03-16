@@ -117,8 +117,9 @@ class PORXY_DNS(object):
         PORXY_DNS.deq_cache = Queue(maxsize=deq_size) if deq_size > 0 else Queue()
         PORXY_DNS.dns_cache = pylru.lrucache(lru_size)
         gevent.spawn(_init_cache_queue)
-        print 'Start DNS server at %s:%d\n' % (server_ip, server_port)
-        dns_server = SocketServer.UDPServer((server_ip, server_port), DNSHandler)
+	for i in server_ip:
+	        print 'Start DNS server at %s:%d\n' % (i, server_port)
+        	dns_server = SocketServer.UDPServer((i, server_port), DNSHandler)
         dns_server.serve_forever()
 
 def load_config(filename):
@@ -153,7 +154,8 @@ if __name__ == '__main__':
     config_file = os.path.basename(__file__).split('.')[0] + '.conf'
     config_dict = load_config(config_file)
 
-    server_ip, server_port = config_dict['server_ip'], int(config_dict['server_port'])
+    server_ip = config_dict['server_ip'].split(',')
+    server_port = int(config_dict['server_port'])
     redis_ip, redis_port = config_dict['redis_ip'], int(config_dict['redis_port'])
     redis_expire = int(config_dict['redis_expire'])
     domesticserver, domesticport = config_dict['domesticserver'], int(config_dict['domesticport'])
