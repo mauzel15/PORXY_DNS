@@ -18,10 +18,15 @@ import gevent
 import pickle
 from gevent import monkey
 from datetime import datetime
+from dns import resolver
 
 monkey.patch_all()
 from gevent.queue import Queue
 import pylru
+
+def debug_(content):
+    if debug: 
+        print content
 
 def gfw_q(name):
     return re.findall(name, gfwlist)
@@ -50,9 +55,7 @@ class RedisHandler:
 def handler(data, client, sock):
     try:
         request = dnslib.DNSRecord.parse(data)
-    except Exception as e:
-        print 'Not a DNS packet.\n', e
-    else:
+
         qname = request.q.qname
         q_name_list = str(qname).split('.')
         q_name = ".".join(q_name_list[-3:len(q_name_list)-1])
@@ -62,9 +65,28 @@ def handler(data, client, sock):
         redis_key = "%s_%s" %(qt, qname)
         r_handler = RedisHandler(redis_ip, redis_port, redis_key)
         r_get = r_handler.r_get()
+
+    except:
+        sys.exit(255)
+
+    else:
+
+	if str(qname)[:-1] in cnamelist:
+		cname_v = cnamelist[str(qname)[:-1]]
+		cname = "%s %s IN CNAME %s" % (str(qname)[:-1], ttl, cnamelist[str(qname)[:-1]])
+		reply = request.replyZone(cname)
+		ans = resolver.query(cname_v, "A")
+		for i in ans.response.answer:
+			i_list = i.to_text().split("\n")
+			for k in i_list:
+				ip = k.split(" ")[-1]
+				reply.add_answer(dnslib.RR(cname_v,dnslib.QTYPE.A,rdata=dnslib.A(ip),ttl=ttl))
+		sock.sendto(reply.pack(), client)
+		debug_(reply)
+		return
+
         if r_get:
-            if debug:
-                print r_get
+            debug_(r_get)
             r_get = dnslib.DNSRecord.pack(r_get)
             ret = dnslib.DNSRecord.parse(r_get)
             ret.header.id = qid
@@ -82,17 +104,20 @@ def handler(data, client, sock):
         else:
             dns_server = domesticserver
             dns_port = domesticport
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.sendto(data, (dns_server, dns_port))
-        data, server = s.recvfrom(8192)
-        reply = dnslib.DNSRecord.parse(data)
+	reply = get_dns(data, dns_server, dns_port)
         for i in range(len(reply.rr)):
             reply.rr[i].ttl = ttl
         sock.sendto(reply.pack(), client)
         r_handler.r_set(redis_key, reply, redis_expire)
-	if debug:
-            print reply
+        debug_(reply)
         return reply
+
+def get_dns(data, dns_server, dns_port):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.sendto(data, (dns_server, dns_port))
+        data, server = s.recvfrom(8192)
+        reply = dnslib.DNSRecord.parse(data)
+	return reply
 
 def _init_cache_queue():
     counter = 0
@@ -118,7 +143,7 @@ class PORXY_DNS(object):
         PORXY_DNS.dns_cache = pylru.lrucache(lru_size)
         gevent.spawn(_init_cache_queue)
         print 'Start DNS server at %s:%d\n' % (server_ip, server_port)
-        	dns_server = SocketServer.UDPServer((server_ip, server_port), DNSHandler)
+        dns_server = SocketServer.UDPServer((server_ip, server_port), DNSHandler)
         dns_server.serve_forever()
 
 def load_config(filename):
@@ -149,12 +174,18 @@ def load_whitelist(filename):
     whitelist = whitelist.split('\n')
     return "".join(whitelist)
 
+def load_cname(filename):
+    cname = {}
+    with open(filename,'r') as f:
+	for line in f:
+		cname[line.strip("\n").split("|")[0]] = line.strip("\n").split("|")[1]
+    return cname
+
 if __name__ == '__main__':
     config_file = os.path.basename(__file__).split('.')[0] + '.conf'
     config_dict = load_config(config_file)
 
-    server_ip = config_dict['server_ip'].split(',')
-    server_port = int(config_dict['server_port'])
+    server_ip, server_port = config_dict['server_ip'], int(config_dict['server_port'])
     redis_ip, redis_port = config_dict['redis_ip'], int(config_dict['redis_port'])
     redis_expire = int(config_dict['redis_expire'])
     domesticserver, domesticport = config_dict['domesticserver'], int(config_dict['domesticport'])
@@ -165,6 +196,7 @@ if __name__ == '__main__':
     gfwlist = load_gfwlist(config_dict['gfwlist'])
     forwardlist = load_forwardlist(config_dict['forwardlist'])
     whitelist = load_whitelist(config_dict['whitelist'])
+    cnamelist = load_cname(config_dict['cname'])
+
     debug = config_dict['debug']
     PORXY_DNS.start()
-
