@@ -66,8 +66,10 @@ def handler(data, client, sock):
         r_handler = RedisHandler(redis_ip, redis_port, redis_key)
         r_get = r_handler.r_get()
 
-    except:
-        sys.exit(255)
+    #except:
+    #    sys.exit(255)
+    except Exception as e:
+	print 'Not a DNS packet.\n', e
 
     else:
 
@@ -123,7 +125,10 @@ def _init_cache_queue():
     counter = 0
     while True:
         data, addr, sock = PORXY_DNS.deq_cache.get()
-        gevent.spawn(handler, data, addr, sock)
+	try:
+	        gevent.spawn(handler, data, addr, sock)
+	except:
+        	sys.exit(255)	
         counter += 1
 	time_ = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if debug:
