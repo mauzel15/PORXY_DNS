@@ -25,7 +25,7 @@ from gevent.queue import Queue
 import pylru
 
 def debug_(content):
-    if debug: 
+    if debug == 1: 
         print content
 
 def gfw_q(name):
@@ -131,7 +131,7 @@ def _init_cache_queue():
         	sys.exit(255)	
         counter += 1
 	time_ = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        if debug:
+        if debug == 1:
             print "########################################## %s #########################################" % counter
             print "########################################## %s #########################################" % time_
 
