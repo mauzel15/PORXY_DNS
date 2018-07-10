@@ -4,3 +4,4 @@ greenlet==0.4.13
 pylru==1.0.9
 redis==2.10.6
 dnspython==1.15.0
+supervisor==3.3.4
