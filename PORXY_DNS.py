@@ -40,18 +40,26 @@ def whitelist_q(name):
 
 class RedisHandler:
     def __init__(self, host, port, name):
-        self.r = redis.Redis(host=host, port=int(port), decode_responses=True)
+        self.host = host
+        self.port = port
         self.name = name
+        if not hasattr(RedisHandler, 'pool'):
+            RedisHandler.create_pool(self.host, self.port)
+        self._connection = redis.Redis(connection_pool =  RedisHandler.pool)
+
+    @staticmethod
+    def create_pool(HOST,PORT):
+        RedisHandler.pool = redis.ConnectionPool(host = HOST, port = PORT)
 
     def r_get(self):
-        tmp = self.r.get(self.name)
+        tmp = self._connection.get(self.name)
         if tmp:
             return pickle.loads(tmp)
         else:
             return None
     def r_set(self, key, value, redis_expire):
-        self.r.set(key, pickle.dumps(value))
-        self.r.expire(key, redis_expire)
+        self._connection.set(key, pickle.dumps(value))
+        self._connection.expire(key, redis_expire)
 
 def handler(data, client, sock):
     try:
@@ -195,7 +203,6 @@ def load_cname(filename):
 if __name__ == '__main__':
     config_file = os.path.basename(__file__).split('.')[0] + '.conf'
     config_dict = load_config(config_file)
-
     server_ip, server_port = config_dict['server_ip'], int(config_dict['server_port'])
     redis_ip, redis_port = config_dict['redis_ip'], int(config_dict['redis_port'])
     redis_expire = int(config_dict['redis_expire'])
