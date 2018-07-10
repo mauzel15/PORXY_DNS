@@ -14,6 +14,7 @@ import dnslib
 import redis
 import re
 import os
+import sys
 import gevent
 import pickle
 from gevent import monkey
@@ -25,7 +26,7 @@ from gevent.queue import Queue
 import pylru
 
 def debug_(content):
-    if debug == 1: 
+    if debug: 
         print content
 
 def gfw_q(name):
@@ -65,12 +66,15 @@ def handler(data, client, sock):
         redis_key = "%s_%s" %(qt, qname)
         r_handler = RedisHandler(redis_ip, redis_port, redis_key)
         r_get = r_handler.r_get()
+        msg = "############### request domain is %s  ###############" % q_name
+        debug_(msg)
+
 
     #except:
     #    sys.exit(255)
     except Exception as e:
 	print 'Not a DNS packet.\n', e
-
+	return
     else:
 
 	if str(qname)[:-1] in cnamelist:
@@ -111,6 +115,8 @@ def handler(data, client, sock):
             reply.rr[i].ttl = ttl
         sock.sendto(reply.pack(), client)
         r_handler.r_set(redis_key, reply, redis_expire)
+        msg = "###############  request domain is  %s  ###############" % q_name
+        debug_(msg)
         debug_(reply)
         return reply
 
@@ -131,7 +137,7 @@ def _init_cache_queue():
         	sys.exit(255)	
         counter += 1
 	time_ = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        if debug == 1:
+        if debug:
             print "########################################## %s #########################################" % counter
             print "########################################## %s #########################################" % time_
 
