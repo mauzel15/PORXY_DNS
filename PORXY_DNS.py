@@ -3,7 +3,7 @@
 # @Time    : 2018/3/15 17:49
 # @Author  : qiusong_chen@foxmail.com
 # @Site    : 
-# @File    : DNSserver.py.py
+# @File    : dnsPorxy.py
 # @Software: PyCharm
 
 import ConfigParser
@@ -39,17 +39,18 @@ def whitelist_q(name):
     return re.findall(name, whitelist)
 
 class RedisHandler:
-    def __init__(self, host, port, name):
+    def __init__(self, host, port, name, passwd):
         self.host = host
         self.port = port
         self.name = name
+        self.passwd = passwd
         if not hasattr(RedisHandler, 'pool'):
-            RedisHandler.create_pool(self.host, self.port)
+            RedisHandler.create_pool(self.host, self.port, self.passwd)
         self._connection = redis.Redis(connection_pool =  RedisHandler.pool)
 
     @staticmethod
-    def create_pool(HOST,PORT):
-        RedisHandler.pool = redis.ConnectionPool(host = HOST, port = PORT)
+    def create_pool(HOST,PORT,PASSWD):
+        RedisHandler.pool = redis.ConnectionPool(host = HOST, port = PORT, password=PASSWD)
 
     def r_get(self):
         tmp = self._connection.get(self.name)
@@ -72,32 +73,37 @@ def handler(data, client, sock):
         qtype = request.q.qtype
         qt = dnslib.QTYPE[qtype]
         redis_key = "%s_%s" %(qt, qname)
-        r_handler = RedisHandler(redis_ip, redis_port, redis_key)
+        r_handler = RedisHandler(redis_ip, redis_port, redis_key, passwd)
         r_get = r_handler.r_get()
         msg = "############### request domain is %s  ###############" % q_name
         debug_(msg)
 
-
-    #except:
-    #    sys.exit(255)
     except Exception as e:
-	print 'Not a DNS packet.\n', e
-	return
-    else:
+        print 'Not a DNS packet.\n', e
+        return
 
-	if str(qname)[:-1] in cnamelist:
-		cname_v = cnamelist[str(qname)[:-1]]
-		cname = "%s %s IN CNAME %s" % (str(qname)[:-1], ttl, cnamelist[str(qname)[:-1]])
-		reply = request.replyZone(cname)
-		ans = resolver.query(cname_v, "A")
-		for i in ans.response.answer:
-			i_list = i.to_text().split("\n")
-			for k in i_list:
-				ip = k.split(" ")[-1]
-				reply.add_answer(dnslib.RR(cname_v,dnslib.QTYPE.A,rdata=dnslib.A(ip),ttl=ttl))
-		sock.sendto(reply.pack(), client)
-		debug_(reply)
-		return
+    else:
+        if str(qname)[:-1] in cnamelist:
+            cname_v = cnamelist[str(qname)[:-1]]
+            cname = "%s %s IN CNAME %s" % (str(qname)[:-1], ttl, cnamelist[str(qname)[:-1]])
+            reply = request.replyZone(cname)
+            ans = resolver.query(cname_v, "A")
+            for i in ans.response.answer:
+                i_list = i.to_text().split("\n")
+                for k in i_list:
+                    ip = k.split(" ")[-1]
+                    reply.add_answer(dnslib.RR(cname_v,dnslib.QTYPE.A,rdata=dnslib.A(ip),ttl=ttl))
+            sock.sendto(reply.pack(), client)
+            debug_(reply)
+            return
+
+        if str(qname)[:-1] in aList:
+            ip = aList[str(qname)[:-1]]
+            answer = request.reply()
+            answer.add_answer(dnslib.RR(qname, dnslib.QTYPE.A, rdata=dnslib.A(ip), ttl=ttl))
+            sock.sendto(answer.pack(), client)
+            debug_("\n%s\n" % answer)
+            return
 
         if r_get:
             debug_(r_get)
@@ -106,49 +112,65 @@ def handler(data, client, sock):
             ret.header.id = qid
             sock.sendto(ret.pack(), client)
             return r_get
+
         elif whitelist_q(q_name):
             dns_server = domesticserver
             dns_port = domesticport
+
         elif forward_q(q_name):
             dns_server = foreignserver
             dns_port = foreignport
+
         elif gfw_q(q_name):
             dns_server = foreignserver
             dns_port = foreignport
+
         else:
             dns_server = domesticserver
             dns_port = domesticport
-	reply = get_dns(data, dns_server, dns_port)
-        for i in range(len(reply.rr)):
-            reply.rr[i].ttl = ttl
-        sock.sendto(reply.pack(), client)
-        r_handler.r_set(redis_key, reply, redis_expire)
-        msg = "###############  request domain is  %s  ###############" % q_name
-        debug_(msg)
-        debug_(reply)
+
+        reply = get_resolve(data, dns_server, dns_port)
+        if reply:
+            for i in range(len(reply.rr)):
+                reply.rr[i].ttl = ttl
+            sock.sendto(reply.pack(), client)
+            if forward_q(q_name) or gfw_q(q_name):
+                r_handler.r_set(redis_key, reply, redis_expire)
+                
+            msg = "###############  request domain is  %s  ###############" % q_name
+            debug_(msg)
+            debug_(reply)
         return reply
 
-def get_dns(data, dns_server, dns_port):
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.sendto(data, (dns_server, dns_port))
-        data, server = s.recvfrom(8192)
-        reply = dnslib.DNSRecord.parse(data)
-	return reply
+def get_resolve(data, dns_server, dns_port):
+    i = 0
+    while i < 5:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(5)
+            s.sendto(data, (dns_server, dns_port))
+            data, server = s.recvfrom(8192)
+            reply = dnslib.DNSRecord.parse(data)
+        except:
+            i += 1
+            continue
+        else:
+            return reply
+    return
 
 def _init_cache_queue():
     counter = 0
     while True:
         data, addr, sock = PORXY_DNS.deq_cache.get()
-	try:
-	        gevent.spawn(handler, data, addr, sock)
-	except:
-        	sys.exit(255)	
+        try:
+            gevent.spawn(handler, data, addr, sock)
+        except:
+            sys.exit(255)    
         counter += 1
-	time_ = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        time_ = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if debug:
             print "########################################## %s #########################################" % counter
             print "########################################## %s #########################################" % time_
-
 
 class DNSHandler(SocketServer.BaseRequestHandler):
     def handle(self):
@@ -173,7 +195,7 @@ def load_config(filename):
 
 def load_gfwlist(filename):
     with open(filename, 'r') as f:
-            gfwlist = f.read()
+        gfwlist = f.read()
     GFW_str = base64.b64decode(gfwlist)
     GFW_list_ = GFW_str.split('\n')
     start_list = GFW_list_.index("!---------------------Groups--------------------")
@@ -181,24 +203,18 @@ def load_gfwlist(filename):
     GFW_list = GFW_list_[int(start_list):int(end_list)]
     return "".join(GFW_list)
 
-def load_forwardlist(filename):
-    with open(filename, 'r') as f:
-            forwardlist = f.read()
-    forwardlist = forwardlist.split('\n')
-    return "".join(forwardlist)
-
 def load_whitelist(filename):
     with open(filename,'r') as f:
-            whitelist = f.read()
+        whitelist = f.read()
     whitelist = whitelist.split('\n')
     return "".join(whitelist)
 
-def load_cname(filename):
-    cname = {}
+def loadTxt(filename):
+    result = {}
     with open(filename,'r') as f:
-	for line in f:
-		cname[line.strip("\n").split("|")[0]] = line.strip("\n").split("|")[1]
-    return cname
+        for line in f:
+            result[line.strip("\n").split("|")[0]] = line.strip("\n").split("|")[1]
+    return result
 
 if __name__ == '__main__':
     config_file = os.path.basename(__file__).split('.')[0] + '.conf'
@@ -212,9 +228,10 @@ if __name__ == '__main__':
     ttl = int(config_dict['ttl'])
     gfwlist_ = config_dict['gfwlist']
     gfwlist = load_gfwlist(config_dict['gfwlist'])
-    forwardlist = load_forwardlist(config_dict['forwardlist'])
+    forwardlist = load_whitelist(config_dict['forwardlist'])
     whitelist = load_whitelist(config_dict['whitelist'])
-    cnamelist = load_cname(config_dict['cname'])
-
+    cnamelist = loadTxt(config_dict['cname'])
+    aList = loadTxt(config_dict['atxt'])
     debug = config_dict['debug']
+    passwd = config_dict['redis_passwd']
     PORXY_DNS.start()
