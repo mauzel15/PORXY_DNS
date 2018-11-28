@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<h1>清除10.1.1.2的DNS缓存</h1>
+<form method="post">
+    <select id="selectType">
+        <option value ="0" selected = "selected">选择DNS记录类型 </option>
+        <option value ="1">A</option>
+        <option value="2">MX</option>
+        <option value="3">NS</option>
+        <option value="4">SOA</option>
+        <option value="5">PTR</option>
+        <option value="6">AAAA</option>
+        <option value ="7">CNAME</option>
+    </select>
+    <input type="text" id="name" placeholder="域名" />
+    <button type="button" class="btn btn-blue" id="clean">提交</button>
+</form>
+<script src="http://libs.baidu.com/jquery/2.1.1/jquery.min.js"></script>
+<script>
+$("#clean").click(function(){
+    var record = document.getElementById("name").value.replace(/\s+/g,"");
+    var type = $('#selectType option:selected').text();
+    var index = document.getElementById("selectType").value;
+    $.ajaxSettings.async = false;
+    $.ajax({
+        type: "post",
+        url: "/post/clean",
+        contentType: "application/json",
+        dataType: "json",
+        data: JSON.stringify({"record": record, "type": type, "index": index}),
+        success: function () {
+            alert('清除成功');
+        },
+        error: function () {
+            alert('清除失败');
+        }
+    })
+});
+</script>
+</body>
+</html>
