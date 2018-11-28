@@ -62,6 +62,9 @@ class RedisHandler:
         self._connection.set(key, pickle.dumps(value))
         self._connection.expire(key, redis_expire)
 
+    def delete(self, key):
+        self._connection.delete(*self._connection.keys(key))
+        
 def handler(data, client, sock):
     try:
         request = dnslib.DNSRecord.parse(data)
