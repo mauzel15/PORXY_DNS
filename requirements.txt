@@ -5,3 +5,5 @@ pylru==1.0.9
 redis==2.10.6
 dnspython==1.15.0
 supervisor==3.3.4
+Flask==1.0.2
+Jinja2==2.10
