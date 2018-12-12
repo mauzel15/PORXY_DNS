@@ -20,7 +20,7 @@ def clean():
     if data["index"] != '0':
         record = "%s_%s." %(data["type"], data["record"])
         try:
-            RedisHandler(host="127.0.0.1",port="6379", name="delete").delete(record)
+            RedisHandler(host="127.0.0.1",port="6379", name="delete", passwd="111111").delete(record)
             return make_response(jsonify({'msg': '清除成功'}), 200)
         except:
             return make_response(jsonify({'msg': '清除成功'}), 200)
