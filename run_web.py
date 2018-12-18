@@ -3,7 +3,7 @@
 # @Author  : qiusong_chen@foxmail.com
 
 from flask import Flask, render_template, request, make_response, jsonify
-from dnsPorxy import RedisHandler
+from PORXY_DNS import RedisHandler
 
 app=Flask(__name__)
 
