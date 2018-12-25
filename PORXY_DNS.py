@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # @Time    : 2018/3/15 17:49
 # @Author  : qiusong_chen@foxmail.com
-# @Site    : 
+# @Site    :
 # @File    : dnsPorxy.py
 # @Software: PyCharm
 
@@ -26,7 +26,7 @@ from gevent.queue import Queue
 import pylru
 
 def debug_(content):
-    if debug: 
+    if debug:
         print content
 
 def gfw_q(name):
@@ -64,7 +64,7 @@ class RedisHandler:
 
     def delete(self, key):
         self._connection.delete(*self._connection.keys(key))
-        
+
 def handler(data, client, sock):
     try:
         request = dnslib.DNSRecord.parse(data)
@@ -72,14 +72,14 @@ def handler(data, client, sock):
         qname = request.q.qname
         q_name_list = str(qname).split('.')
         q_name = ".".join(q_name_list[-3:len(q_name_list)-1])
+        q_domain = ".".join(q_name_list[:len(q_name_list)-1])
         qid = request.header.id
         qtype = request.q.qtype
         qt = dnslib.QTYPE[qtype]
         redis_key = "%s_%s" %(qt, qname)
         r_handler = RedisHandler(redis_ip, redis_port, redis_key, passwd)
         r_get = r_handler.r_get()
-        msg = "############### request domain is %s  ###############" % q_name
-        debug_(msg)
+        msg = "############### %s request domain is %s   ###############" % (client, q_domain)
 
     except Exception as e:
         print 'Not a DNS packet.\n', e
@@ -97,6 +97,7 @@ def handler(data, client, sock):
                     ip = k.split(" ")[-1]
                     reply.add_answer(dnslib.RR(cname_v,dnslib.QTYPE.A,rdata=dnslib.A(ip),ttl=ttl))
             sock.sendto(reply.pack(), client)
+            debug_(msg)
             debug_(reply)
             return
 
@@ -105,10 +106,12 @@ def handler(data, client, sock):
             answer = request.reply()
             answer.add_answer(dnslib.RR(qname, dnslib.QTYPE.A, rdata=dnslib.A(ip), ttl=ttl))
             sock.sendto(answer.pack(), client)
+            debug_(msg)
             debug_("\n%s\n" % answer)
             return
 
         if r_get:
+            debug_(msg)
             debug_(r_get)
             r_get = dnslib.DNSRecord.pack(r_get)
             ret = dnslib.DNSRecord.parse(r_get)
@@ -116,11 +119,11 @@ def handler(data, client, sock):
             sock.sendto(ret.pack(), client)
             return r_get
 
-        elif whitelist_q(q_name):
+        elif whitelist_q(q_domain):
             dns_server = domesticserver
             dns_port = domesticport
 
-        elif forward_q(q_name):
+        elif forward_q(q_domain):
             dns_server = foreignserver
             dns_port = foreignport
 
@@ -133,15 +136,14 @@ def handler(data, client, sock):
             dns_port = domesticport
 
         reply = get_resolve(data, dns_server, dns_port)
+        debug_(msg)
         if reply:
             for i in range(len(reply.rr)):
                 reply.rr[i].ttl = ttl
             sock.sendto(reply.pack(), client)
-            if forward_q(q_name) or gfw_q(q_name):
+            if forward_q(q_domain) or gfw_q(q_name):
                 r_handler.r_set(redis_key, reply, redis_expire)
-                
-            msg = "###############  request domain is  %s  ###############" % q_name
-            debug_(msg)
+
             debug_(reply)
         return reply
 
@@ -168,12 +170,11 @@ def _init_cache_queue():
         try:
             gevent.spawn(handler, data, addr, sock)
         except:
-            sys.exit(255)    
+            sys.exit(255)
         counter += 1
         time_ = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if debug:
-            print "########################################## %s #########################################" % counter
-            print "########################################## %s #########################################" % time_
+            print "######################  %s ###################### %s ######################" % (counter, time_)
 
 class DNSHandler(SocketServer.BaseRequestHandler):
     def handle(self):
@@ -229,7 +230,6 @@ if __name__ == '__main__':
     foreignserver, foreignport = config_dict['foreignserver'], int(config_dict['foreignport'])
     deq_size, lru_size = int(config_dict['deq_size']), int(config_dict['lru_size'])
     ttl = int(config_dict['ttl'])
-    gfwlist_ = config_dict['gfwlist']
     gfwlist = load_gfwlist(config_dict['gfwlist'])
     forwardlist = load_whitelist(config_dict['forwardlist'])
     whitelist = load_whitelist(config_dict['whitelist'])
